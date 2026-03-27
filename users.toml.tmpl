@@ -1,0 +1,36 @@
+# =============================================================================
+# users.toml.tmpl — Plantilla de credenciales PgDog
+#
+# Las variables ${VAR} son sustituidas en tiempo de arranque por
+# pgdog-entrypoint.sh usando las env vars inyectadas por Dokploy.
+#
+# Variables requeridas en Dokploy:
+#   PGDOG_USERNAME   → usuario con el que la app conecta a PgDog
+#   PGDOG_PASSWORD   → password del usuario de la app
+#   DB_USERNAME      → usuario real en PostgreSQL
+#   DB_PASSWORD      → password real en PostgreSQL
+#   DB_DATABASE      → nombre de la base de datos
+# =============================================================================
+
+# Usuario principal de la aplicación
+[[users]]
+name     = "${PGDOG_USERNAME}"
+password = "${PGDOG_PASSWORD}"
+
+server_username = "${DB_USERNAME}"
+server_password = "${DB_PASSWORD}"
+server_database = "${DB_DATABASE}"
+
+pool_size = 20
+
+# Usuario de migraciones (session pooling para DDL)
+[[users]]
+name     = "migrations"
+password = "${PGDOG_MIGRATIONS_PASSWORD:-${PGDOG_PASSWORD}}"
+
+server_username = "${DB_USERNAME}"
+server_password = "${DB_PASSWORD}"
+server_database = "${DB_DATABASE}"
+
+pool_mode = "session"
+pool_size = 2

@@ -63,13 +63,6 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
-    deploy:
-      resources:
-        limits:
-          memory: 1g
-          cpus: "1.5"
-        reservations:
-          memory: 512m
 
   # ---------------------------------------------------------------------------
   # PostgreSQL Replica 1 (Read-Only)
@@ -110,13 +103,6 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
-    deploy:
-      resources:
-        limits:
-          memory: 1g
-          cpus: "1.0"
-        reservations:
-          memory: 512m
 
   # ---------------------------------------------------------------------------
   # PostgreSQL Replica 2 (Read-Only)
@@ -157,13 +143,6 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
-    deploy:
-      resources:
-        limits:
-          memory: 1g
-          cpus: "1.0"
-        reservations:
-          memory: 512m
 
   # ---------------------------------------------------------------------------
   # PgDog — Connection Pooler & Query Router
@@ -174,9 +153,13 @@ services:
     # Pinear a versión específica en producción: evita cambios inesperados entre deploys
     # Actualizar manualmente tras revisar el changelog: https://github.com/pgdog/pgdog/releases
     image: pgdogdev/pgdog:latest
+    # Entrypoint: genera users.toml desde plantilla + env vars antes de arrancar PgDog
+    entrypoint: ["/bin/sh", "/config/pgdog-entrypoint.sh"]
     volumes:
-      - ./pgdog.toml:/etc/pgdog/pgdog.toml:ro
-      - ./users.toml:/etc/pgdog/users.toml:ro
+      - ./pgdog.toml:/config/pgdog.toml:ro
+      - ./users.toml.tmpl:/config/users.toml.tmpl:ro
+      - ./pgdog-entrypoint.sh:/config/pgdog-entrypoint.sh:ro
+      - pgdog_runtime:/runtime   # volumen temporal para users.toml generado
     ports:
       - "6432:6432"          # ← Único punto de entrada para la app
       - "127.0.0.1:6433:6433" # Admin restringido a loopback
@@ -190,27 +173,18 @@ services:
       postgres-replica-2:
         condition: service_healthy
     environment:
-      PGDOG_CONFIG:       /etc/pgdog/pgdog.toml
-      PGDOG_USERS_CONFIG: /etc/pgdog/users.toml
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      PGDOG_CONFIG:       /config/pgdog.toml
+      PGDOG_USERS_CONFIG: /runtime/users.toml
+      # Las siguientes son inyectadas por Dokploy desde el dashboard:
+      # PGDOG_USERNAME, PGDOG_PASSWORD, DB_USERNAME, DB_PASSWORD, DB_DATABASE
+    # Sin healthcheck: pg_isready no está disponible en la imagen de PgDog
+    # El servicio se considera disponible cuando el puerto 6432 acepta conexiones
     restart: always
     logging:
       driver: json-file
       options:
         max-size: "20m"
         max-file: "5"
-    deploy:
-      resources:
-        limits:
-          memory: 256m
-          cpus: "1.0"
-        reservations:
-          memory: 128m
 
 # =============================================================================
 # Redes y Volúmenes
@@ -228,4 +202,6 @@ volumes:
   postgres_replica1_data:
     driver: local
   postgres_replica2_data:
+    driver: local
+  pgdog_runtime:        # volumen en memoria para users.toml generado dinámicamente
     driver: local

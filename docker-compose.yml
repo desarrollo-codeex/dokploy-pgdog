@@ -1,5 +1,5 @@
 # =============================================================================
-# Arquitectura HA — PRODUCCIÓN: PostgreSQL (1 Primary + 2 Replicas) + PgDog
+# Arquitectura HA — PRODUCCIÓN: PostgreSQL 18 (1 Primary + 2 Replicas) + PgDog
 #
 #   • Los puertos de PostgreSQL NO se exponen al host (solo red interna)
 #   • PgDog admin (:6433) enlazado solo a loopback (127.0.0.1)
@@ -17,7 +17,7 @@ services:
   # PostgreSQL Primary (Read-Write)
   # ---------------------------------------------------------------------------
   postgres-primary:
-    image: bitnami/postgresql:16
+    image: bitnami/postgresql:latest
     environment:
       POSTGRESQL_USERNAME:              ${DB_USERNAME}
       POSTGRESQL_PASSWORD:              ${DB_PASSWORD}
@@ -68,7 +68,7 @@ services:
   # PostgreSQL Replica 1 (Read-Only)
   # ---------------------------------------------------------------------------
   postgres-replica-1:
-    image: bitnami/postgresql:16
+    image: bitnami/postgresql:latest
     environment:
       POSTGRESQL_PASSWORD:              ${DB_PASSWORD}
       POSTGRESQL_REPLICATION_MODE:      slave
@@ -108,7 +108,7 @@ services:
   # PostgreSQL Replica 2 (Read-Only)
   # ---------------------------------------------------------------------------
   postgres-replica-2:
-    image: bitnami/postgresql:16
+    image: bitnami/postgresql:latest
     environment:
       POSTGRESQL_PASSWORD:              ${DB_PASSWORD}
       POSTGRESQL_REPLICATION_MODE:      slave

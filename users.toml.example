@@ -1,0 +1,30 @@
+# =============================================================================
+# users.toml.example — PLANTILLA de credenciales PgDog
+#
+# ⚠ NUNCA commitear users.toml con credenciales reales.
+# Copiar este archivo a users.toml en el servidor y rellenar las credenciales.
+#
+# En Dokploy: subir users.toml como archivo de configuración en la UI,
+# o montarlo vía secret/volume.
+# =============================================================================
+
+[[users]]
+name     = "CAMBIAR_POR_USUARIO_APP"
+password = "CAMBIAR_POR_PASSWORD_FUERTE"
+
+server_username = "CAMBIAR_POR_USUARIO_APP"
+server_password = "CAMBIAR_POR_PASSWORD_FUERTE"
+server_database = "CAMBIAR_POR_NOMBRE_DB"
+
+pool_size = 20
+
+[[users]]
+name     = "CAMBIAR_POR_USUARIO_MIGRACIONES"
+password = "CAMBIAR_POR_PASSWORD_MIGRACIONES"
+
+server_username = "CAMBIAR_POR_USUARIO_APP"
+server_password = "CAMBIAR_POR_PASSWORD_FUERTE"
+server_database = "CAMBIAR_POR_NOMBRE_DB"
+
+pool_mode = "session"
+pool_size = 2

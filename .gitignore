@@ -4,6 +4,11 @@ test/node_modules
 .env
 .env.prod
 .env.local
+.env.dev
+
+# Credenciales de PgDog — contiene passwords reales, NO al repositorio
+# Usar users.toml.example como plantilla y generar el real en el servidor
+users.toml
 
 # Logs de Docker / aplicación
 *.log

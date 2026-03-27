@@ -146,8 +146,8 @@ services:
 
   # ---------------------------------------------------------------------------
   # PgDog — Connection Pooler & Query Router
-  # :6432  → Endpoint de la app (expuesto al host / load balancer)
-  # :6433  → Admin, solo loopback (nunca exponer a internet)
+  # Acceso vía Traefik TCP/SNI por puerto 443 — sin exponer 6432 al host
+  # URL de conexión: postgresql://user:pass@db.tudominio.com:443/db?sslmode=require
   # ---------------------------------------------------------------------------
   pgdog:
     # Pinear a versión específica en producción: evita cambios inesperados entre deploys
@@ -160,9 +160,20 @@ services:
       - ./users.toml.tmpl:/config/users.toml.tmpl:ro
       - ./pgdog-entrypoint.sh:/config/pgdog-entrypoint.sh:ro
       - pgdog_runtime:/runtime   # volumen temporal para users.toml generado
-    ports:
-      - "6432:6432"          # ← Único punto de entrada para la app
-      - "127.0.0.1:6433:6433" # Admin restringido a loopback
+    # ── Sin ports: Traefik enruta las conexiones TCP por el puerto 443 vía SNI ──
+    # Puerto 6432 NO expuesto al host — solo accesible internamente
+    expose:
+      - "6432"
+    labels:
+      - "traefik.enable=true"
+      # ── Router TCP: enruta conexiones PostgreSQL por SNI en el puerto 443 ──
+      # Traefik termina TLS (cert Let's Encrypt) y reenvía TCP plano a pgdog:6432
+      # La app se conecta a: postgresql://user:pass@db.tudominio.com:443/db?sslmode=require
+      - "traefik.tcp.routers.pgdog-db.rule=HostSNI(`${PGDOG_DOMAIN}`)"
+      - "traefik.tcp.routers.pgdog-db.entrypoints=websecure"
+      - "traefik.tcp.routers.pgdog-db.tls=true"
+      - "traefik.tcp.routers.pgdog-db.tls.certresolver=letsencrypt"
+      - "traefik.tcp.services.pgdog-db.loadbalancer.server.port=6432"
     networks:
       - pg_ha_network
     depends_on:

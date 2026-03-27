@@ -5,7 +5,8 @@
   "main": "dist/app.module.js",
   "scripts": {
     "build": "tsc",
-    "start": "ts-node src/app.module.ts",
+    "start": "ts-node src/index.ts",
+    "test:local":  "ts-node src/index.ts",
     "migration:run":     "typeorm migration:run -d src/database/database.module.ts",
     "migration:revert":  "typeorm migration:revert -d src/database/database.module.ts",
     "migration:generate":"typeorm migration:generate -d src/database/database.module.ts"

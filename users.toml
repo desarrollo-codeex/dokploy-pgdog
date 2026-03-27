@@ -1,0 +1,61 @@
+# =============================================================================
+# users.toml — Credenciales de usuarios de PgDog
+#
+# PgDog verifica aquí las credenciales del CLIENTE antes de crear la conexión
+# al backend PostgreSQL. Permite separar las credenciales del cliente de las
+# del servidor (útil para credenciales rotadas, entornos distintos, etc.)
+#
+# Cada entrada [[users]] define:
+#   • name / password:           Lo que el cliente (TypeORM) envía al conectarse a PgDog
+#   • server_username/password:  Lo que PgDog usa para conectarse al PostgreSQL real
+#   • server_database:           Base de datos en el servidor PostgreSQL
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Usuario principal de la aplicación
+# (TypeORM usará estas credenciales al conectar con PgDog)
+# -----------------------------------------------------------------------------
+[[users]]
+# Credenciales que TypeORM / el cliente envía a PgDog
+name     = "app_user"
+password = "app_password123"
+
+# Credenciales que PgDog usará para conectarse al PostgreSQL (pueden diferir)
+server_username = "app_user"
+server_password = "app_password123"
+server_database = "app_db"
+
+# Pool size específico para este usuario (sobreescribe default_pool_size del general)
+pool_size = 20
+
+# Modo de pooling por usuario (puede diferir del global si se necesita)
+# pool_mode = "transaction"
+
+# -----------------------------------------------------------------------------
+# Usuario administrador/migraciones
+# Útil para correr migraciones desde un servicio separado o CLI
+# NO exponer en la app de producción
+# -----------------------------------------------------------------------------
+[[users]]
+name     = "migrations_user"
+password = "migrations_password_secret"
+
+server_username = "app_user"          # Mismo usuario en PostgreSQL pero con permisos de DDL
+server_password = "app_password123"
+server_database = "app_db"
+
+# Para migraciones usar session pooling: necesita transacciones largas y DDL
+pool_mode = "session"
+pool_size = 2
+
+# -----------------------------------------------------------------------------
+# Usuario de solo lectura (opcional)
+# Para herramientas de reporting/analytics que solo leen datos
+# -----------------------------------------------------------------------------
+# [[users]]
+# name     = "readonly_user"
+# password = "readonly_password"
+# server_username = "app_user"
+# server_password = "app_password123"
+# server_database = "app_db"
+# pool_size = 10

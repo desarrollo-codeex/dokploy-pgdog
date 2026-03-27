@@ -1,0 +1,9 @@
+test/node_modules
+
+# Variables de entorno con credenciales — NUNCA al repositorio
+.env
+.env.prod
+.env.local
+
+# Logs de Docker / aplicación
+*.log

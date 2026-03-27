@@ -1,0 +1,231 @@
+# =============================================================================
+# Arquitectura HA — PRODUCCIÓN: PostgreSQL (1 Primary + 2 Replicas) + PgDog
+#
+#   • Los puertos de PostgreSQL NO se exponen al host (solo red interna)
+#   • PgDog admin (:6433) enlazado solo a loopback (127.0.0.1)
+#   • Recursos limitados por contenedor (memory/cpu)
+#   • Logging con rotación de archivos
+#   • PostgreSQL ajustado para producción: WAL, checkpoints, shared_buffers
+#   • pg_stat_statements habilitado para monitoreo de queries
+#   • restart: always (reinicio ante cualquier falla del daemon)
+#   • Sin valores por defecto en credenciales (obliga a definir .env)
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Primary (Read-Write)
+  # ---------------------------------------------------------------------------
+  postgres-primary:
+    image: bitnami/postgresql:16
+    environment:
+      POSTGRESQL_USERNAME:              ${DB_USERNAME}
+      POSTGRESQL_PASSWORD:              ${DB_PASSWORD}
+      POSTGRESQL_DATABASE:              ${DB_DATABASE}
+      POSTGRESQL_REPLICATION_MODE:      master
+      POSTGRESQL_REPLICATION_USER:      ${DB_REPL_USER}
+      POSTGRESQL_REPLICATION_PASSWORD:  ${DB_REPL_PASSWORD}
+      # ── Tuning de producción ─────────────────────────────────────────────
+      POSTGRESQL_MAX_CONNECTIONS:          "300"
+      POSTGRESQL_SHARED_PRELOAD_LIBRARIES: "pg_stat_statements"
+      # WAL y replicación robusta
+      POSTGRESQL_WAL_LEVEL:                "replica"
+      POSTGRESQL_MAX_WAL_SENDERS:          "10"
+      POSTGRESQL_WAL_KEEP_SIZE:            "512"    # MB de WAL retenidos
+      POSTGRESQL_CHECKPOINT_COMPLETION_TARGET: "0.9"
+      POSTGRESQL_MAX_WAL_SIZE:             "2GB"
+      POSTGRESQL_MIN_WAL_SIZE:             "256MB"
+      # Memoria (ajustar según RAM disponible: shared_buffers ≈ 25% RAM)
+      POSTGRESQL_SHARED_BUFFERS:           "256MB"
+      POSTGRESQL_EFFECTIVE_CACHE_SIZE:     "768MB"
+      POSTGRESQL_WORK_MEM:                 "16MB"
+      POSTGRESQL_MAINTENANCE_WORK_MEM:     "128MB"
+      # Logging de queries lentas (>500ms)
+      POSTGRESQL_LOG_MIN_DURATION_STATEMENT: "500"
+      POSTGRESQL_LOG_CONNECTIONS:          "off"
+      POSTGRESQL_LOG_DISCONNECTIONS:       "off"
+    volumes:
+      - postgres_primary_data:/bitnami/postgresql
+    # ── SIN ports: PostgreSQL no debe ser accesible fuera de la red interna ──
+    expose:
+      - "5432"
+    networks:
+      - pg_ha_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $POSTGRESQL_USERNAME -d $POSTGRESQL_DATABASE"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.5"
+        reservations:
+          memory: 512m
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Replica 1 (Read-Only)
+  # ---------------------------------------------------------------------------
+  postgres-replica-1:
+    image: bitnami/postgresql:16
+    environment:
+      POSTGRESQL_PASSWORD:              ${DB_PASSWORD}
+      POSTGRESQL_REPLICATION_MODE:      slave
+      POSTGRESQL_MASTER_HOST:           postgres-primary
+      POSTGRESQL_MASTER_PORT_NUMBER:    "5432"
+      POSTGRESQL_REPLICATION_USER:      ${DB_REPL_USER}
+      POSTGRESQL_REPLICATION_PASSWORD:  ${DB_REPL_PASSWORD}
+      POSTGRESQL_MAX_CONNECTIONS:          "300"
+      POSTGRESQL_SHARED_PRELOAD_LIBRARIES: "pg_stat_statements"
+      POSTGRESQL_SHARED_BUFFERS:           "256MB"
+      POSTGRESQL_EFFECTIVE_CACHE_SIZE:     "768MB"
+      POSTGRESQL_WORK_MEM:                 "16MB"
+      POSTGRESQL_LOG_MIN_DURATION_STATEMENT: "500"
+    volumes:
+      - postgres_replica1_data:/bitnami/postgresql
+    expose:
+      - "5432"
+    networks:
+      - pg_ha_network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -p 5432"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+        reservations:
+          memory: 512m
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Replica 2 (Read-Only)
+  # ---------------------------------------------------------------------------
+  postgres-replica-2:
+    image: bitnami/postgresql:16
+    environment:
+      POSTGRESQL_PASSWORD:              ${DB_PASSWORD}
+      POSTGRESQL_REPLICATION_MODE:      slave
+      POSTGRESQL_MASTER_HOST:           postgres-primary
+      POSTGRESQL_MASTER_PORT_NUMBER:    "5432"
+      POSTGRESQL_REPLICATION_USER:      ${DB_REPL_USER}
+      POSTGRESQL_REPLICATION_PASSWORD:  ${DB_REPL_PASSWORD}
+      POSTGRESQL_MAX_CONNECTIONS:          "300"
+      POSTGRESQL_SHARED_PRELOAD_LIBRARIES: "pg_stat_statements"
+      POSTGRESQL_SHARED_BUFFERS:           "256MB"
+      POSTGRESQL_EFFECTIVE_CACHE_SIZE:     "768MB"
+      POSTGRESQL_WORK_MEM:                 "16MB"
+      POSTGRESQL_LOG_MIN_DURATION_STATEMENT: "500"
+    volumes:
+      - postgres_replica2_data:/bitnami/postgresql
+    expose:
+      - "5432"
+    networks:
+      - pg_ha_network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -p 5432"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+        reservations:
+          memory: 512m
+
+  # ---------------------------------------------------------------------------
+  # PgDog — Connection Pooler & Query Router
+  # :6432  → Endpoint de la app (expuesto al host / load balancer)
+  # :6433  → Admin, solo loopback (nunca exponer a internet)
+  # ---------------------------------------------------------------------------
+  pgdog:
+    # Pinear a versión específica en producción: evita cambios inesperados entre deploys
+    # Actualizar manualmente tras revisar el changelog: https://github.com/pgdog/pgdog/releases
+    image: pgdogdev/pgdog:latest
+    volumes:
+      - ./pgdog.toml:/etc/pgdog/pgdog.toml:ro
+      - ./users.toml:/etc/pgdog/users.toml:ro
+    ports:
+      - "6432:6432"          # ← Único punto de entrada para la app
+      - "127.0.0.1:6433:6433" # Admin restringido a loopback
+    networks:
+      - pg_ha_network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      postgres-replica-1:
+        condition: service_healthy
+      postgres-replica-2:
+        condition: service_healthy
+    environment:
+      PGDOG_CONFIG:       /etc/pgdog/pgdog.toml
+      PGDOG_USERS_CONFIG: /etc/pgdog/users.toml
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "1.0"
+        reservations:
+          memory: 128m
+
+# =============================================================================
+# Redes y Volúmenes
+# =============================================================================
+networks:
+  pg_ha_network:
+    driver: bridge
+    name: pg_ha_network
+    # Aísla la red de BD del resto de servicios de la aplicación
+    internal: false   # cambiar a true si la app también corre en Compose
+
+volumes:
+  postgres_primary_data:
+    driver: local
+  postgres_replica1_data:
+    driver: local
+  postgres_replica2_data:
+    driver: local

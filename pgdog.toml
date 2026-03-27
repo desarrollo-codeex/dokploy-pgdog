@@ -1,0 +1,102 @@
+# =============================================================================
+# pgdog.toml — Configuración principal de PgDog
+#
+# PgDog actúa como un único punto de entrada PostgreSQL para la aplicación.
+# Analiza el SQL de cada query para decidir a qué backend enviarlo:
+#   • Escritura (INSERT/UPDATE/DELETE/DDL/BEGIN...COMMIT) → Primary
+#   • Lectura  (SELECT sin transacción explícita)          → Réplicas (round-robin)
+#
+# La app NestJS SIEMPRE conecta al puerto 6432. El enrutamiento es transparente.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# [general] — Configuración del servidor PgDog
+# -----------------------------------------------------------------------------
+[general]
+
+host       = "0.0.0.0"
+port       = 6432
+admin_port = 6433
+
+# Ajustar a los cores disponibles en producción (lscpu | grep ^CPU\(s\))
+workers = 8
+
+# Timeouts de conexión al backend (ms)
+connect_timeout = 3000
+idle_timeout    = 300000   # 5 min — cerrar conexiones idle al backend
+
+# Producción: solo errores y advertencias
+log_level = "warn"
+
+# -----------------------------------------------------------------------------
+# [pools] — Configuración global del pool de conexiones
+# -----------------------------------------------------------------------------
+[pools]
+
+# transaction: más eficiente para apps web sin estado (NestJS/TypeORM)
+# session: solo si necesitas named prepared statements o LISTEN/NOTIFY
+pool_mode = "transaction"
+
+# Conexiones reales al backend por par (user, database)
+# PRIMARY: max_connections_primary = default_pool_size × nodo_primary
+# REPLICAS: se distribuye automáticamente entre los nodos replica
+default_pool_size      = 50
+min_pool_size          = 5
+
+# Máximo de conexiones de clientes que PgDog acepta (antes de rechazar)
+max_client_connections = 2000
+
+# ms esperando una conexión libre del pool antes de error al cliente
+pool_timeout           = 8000
+
+# Salud de los backends
+healthcheck_interval   = 15000   # verificar cada 15s
+healthcheck_timeout    = 2000
+
+# Backoff al reconectar un backend caído: 2s, 4s, 8s... hasta max
+reconnect_backoff      = 2000
+
+# -----------------------------------------------------------------------------
+# [[databases]] — Backends de PostgreSQL
+#
+# Todas las entradas con el mismo "name" forman un clúster lógico.
+# PgDog las agrupa y aplica la estrategia de routing definida arriba.
+#
+# ¡IMPORTANTE! El campo "name" es el nombre que usará la app al conectar,
+# no el nombre de la base de datos en PostgreSQL (eso es "database").
+# -----------------------------------------------------------------------------
+
+# — Primary: acepta todas las escrituras y lecturas de transacciones explícitas —
+[[databases]]
+name    = "app_db"          # Nombre expuesto al cliente (TypeORM usará este)
+host    = "postgres-primary"
+port    = 5432
+database = "app_db"         # Nombre real de la DB en PostgreSQL
+primary = true              # Marca este backend como primary (escritura)
+
+# — Réplica 1: solo lectura (SELECTs fuera de transacciones explícitas) —
+[[databases]]
+name    = "app_db"
+host    = "postgres-replica-1"
+port    = 5432
+database = "app_db"
+primary = false             # Réplica de solo lectura
+
+# — Réplica 2: solo lectura (balanceo round-robin entre réplicas) —
+[[databases]]
+name    = "app_db"
+host    = "postgres-replica-2"
+port    = 5432
+database = "app_db"
+primary = false
+
+# -----------------------------------------------------------------------------
+# [query_routing] — Estrategia de enrutamiento de queries
+# (Sección opcional según la versión de PgDog — habilitar si está disponible)
+# -----------------------------------------------------------------------------
+[query_routing]
+
+enabled                 = true
+default_to_primary      = true   # si no se puede parsear, va al primary (seguro)
+transactions_to_primary = true   # BEGIN...COMMIT siempre al primary
+query_cache_size        = 5000   # cache de rutas por hash de query (producción: alto)
